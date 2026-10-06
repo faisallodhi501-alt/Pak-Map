@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pak Map 🇵🇰</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,sans-serif;background:#f4f7f6}
+  header{background:#0b6b43;color:white;padding:12px 14px;text-align:center}
+  header h1{margin:0;font-size:25px}
+  header p{margin:4px 0 0;font-size:13px}
+  .top{padding:10px;background:white;box-shadow:0 2px 8px #0002;position:relative;z-index:1000}
+  .search{display:flex;gap:7px;max-width:900px;margin:auto}
+  input{flex:1;padding:12px;border:1px solid #bbb;border-radius:8px;font-size:16px}
+  button{border:0;border-radius:8px;padding:11px 14px;background:#0b6b43;color:white;font-size:14px;cursor:pointer}
+  button:hover{opacity:.9}
+  .cities{display:flex;gap:6px;overflow:auto;max-width:900px;margin:8px auto 0}
+  .cities button{background:#e8f2ed;color:#075536;white-space:nowrap;padding:8px 11px}
+  #map{height:calc(100vh - 154px);min-height:480px}
+  .status{text-align:center;padding:6px;background:#fff;font-size:12px;color:#555}
+  .leaflet-popup-content{font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🇵🇰 Pak Map</h1>
+  <p>Pakistan Interactive Map</p>
+</header>
+
+<div class="top">
+  <div class="search">
+    <input id="search" placeholder="City ya place search karein...">
+    <button onclick="searchPlace()">Search</button>
+    <button onclick="myLocation()">📍</button>
+  </div>
+  <div class="cities">
+    <button onclick="setPoint('A','Islamabad',33.6844,73.0479)">A: Islamabad</button>
+    <button onclick="setPoint('B','Lahore',31.5204,74.3587)">B: Lahore</button>
+    <button onclick="setPoint('B','Karachi',24.8607,67.0011)">B: Karachi</button>
+    <button onclick="setPoint('B','Peshawar',34.0151,71.5249)">B: Peshawar</button>
+    <button onclick="setPoint('B','Multan',30.1575,71.5249)">B: Multan</button>
+    <button onclick="setPoint('B','Quetta',30.1798,66.9750)">B: Quetta</button>
+  </div>
+</div>
+
+<div style="position:absolute;right:12px;top:160px;z-index:1000;background:white;padding:10px;border-radius:10px;box-shadow:0 2px 12px #0003">
+<b>Nearby</b><br>
+<button onclick="nearby('hospital')">🏥 Hospital</button>
+<button onclick="nearby('school')">🏫 School</button>
+<button onclick="nearby('place_of_worship')">🕌 Mosque</button>
+<button onclick="nearby('fuel')">⛽ Petrol</button>
+</div>
+<div id="map"></div>
+<div id="routeBox" style="position:absolute;left:12px;bottom:35px;z-index:1000;background:white;padding:12px;border-radius:10px;box-shadow:0 2px 12px #0003;max-width:300px;font-size:14px">
+<b>Route Planner</b><br>
+<span id="routeText">A اور B منتخب کریں</span><br><br>
+<button onclick="buildRoute()">🚗 Route دکھائیں</button>
+</div>
+<div class="status">Map data © OpenStreetMap contributors</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([30.3753,69.3451], 5);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const cities = [
+  ['Islamabad',33.6844,73.0479],
+  ['Lahore',31.5204,74.3587],
+  ['Karachi',24.8607,67.0011],
+  ['Peshawar',34.0151,71.5249],
+  ['Multan',30.1575,71.5249],
+  ['Quetta',30.1798,66.9750]
+];
+
+cities.forEach(c => {
+  L.marker([c[1],c[2]]).addTo(map).bindPopup('<b>'+c[0]+'</b><br>Pakistan');
+});
+
+let currentMarker = null;
+let pointA = null, pointB = null, routeLine = null;
+let pointMarkers = [];
+
+function setPoint(type,name,lat,lon){
+  const point = {name,lat,lon};
+  if(type === 'A') pointA = point; else pointB = point;
+  map.setView([lat,lon], 8);
+  const marker = L.marker([lat,lon]).addTo(map)
+    .bindPopup('<b>'+type+': '+name+'</b>').openPopup();
+  pointMarkers.push(marker);
+  updateRouteText();
+}
+
+function updateRouteText(){
+  document.getElementById('routeText').innerHTML =
+    'A: '+(pointA ? pointA.name : '—')+'<br>B: '+(pointB ? pointB.name : '—');
+}
+
+async function buildRoute(){
+  if(!pointA || !pointB){
+    alert('Pehle A aur B dono select karein.');
+    return;
+  }
+  const url = 'https://router.project-osrm.org/route/v1/driving/' +
+    pointA.lon+','+pointA.lat+';'+pointB.lon+','+pointB.lat+
+    '?overview=full&geometries=geojson';
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(!data.routes || !data.routes.length){ alert('Route nahi mila.'); return; }
+    const r = data.routes[0];
+    if(routeLine) map.removeLayer(routeLine);
+    routeLine = L.geoJSON(r.geometry, {weight:5}).addTo(map);
+    map.fitBounds(routeLine.getBounds(), {padding:[30,30]});
+    const km = (r.distance/1000).toFixed(1);
+    const min = Math.round(r.duration/60);
+    document.getElementById('routeText').innerHTML =
+      '<b>'+pointA.name+' → '+pointB.name+'</b><br>'+
+      'Distance: <b>'+km+' km</b><br>'+
+      'Estimated drive: <b>'+min+' min</b>';
+  }catch(e){
+    alert('Route ke liye internet connection check karein.');
+  }
+}
+
+function go(name, lat, lon){
+  map.setView([lat,lon], 12);
+  if(currentMarker) map.removeLayer(currentMarker);
+  currentMarker = L.marker([lat,lon]).addTo(map).bindPopup('<b>'+name+'</b>').openPopup();
+}
+
+async function searchPlace(){
+  const q = document.getElementById('search').value.trim();
+  if(!q) return;
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pk&q=' + encodeURIComponent(q);
+  try{
+    const res = await fetch(url, {headers:{'Accept-Language':'en'}});
+    const data = await res.json();
+    if(!data.length){ alert('Place nahi mila.'); return; }
+    const p = data[0];
+    go(p.display_name.split(',')[0], parseFloat(p.lat), parseFloat(p.lon));
+  }catch(e){
+    alert('Search ke liye internet connection check karein.');
+  }
+}
+
+let nearbyLayer = L.layerGroup().addTo(map);
+
+async function nearby(kind){
+  const center = map.getCenter();
+  let query = '';
+  if(kind === 'hospital') query = 'node["amenity"="hospital"](around:5000,'+center.lat+','+center.lng+');way["amenity"="hospital"](around:5000,'+center.lat+','+center.lng+');';
+  if(kind === 'school') query = 'node["amenity"="school"](around:5000,'+center.lat+','+center.lng+');way["amenity"="school"](around:5000,'+center.lat+','+center.lng+');';
+  if(kind === 'place_of_worship') query = 'node["amenity"="place_of_worship"](around:5000,'+center.lat+','+center.lng+');way["amenity"="place_of_worship"](around:5000,'+center.lat+','+center.lng+');';
+  if(kind === 'fuel') query = 'node["amenity"="fuel"](around:5000,'+center.lat+','+center.lng+');way["amenity"="fuel"](around:5000,'+center.lat+','+center.lng+');';
+
+  const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent('[out:json];('+query+');out center;');
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    nearbyLayer.clearLayers();
+    let count = 0;
+    data.elements.slice(0,50).forEach(el=>{
+      const lat = el.lat || (el.center && el.center.lat);
+      const lon = el.lon || (el.center && el.center.lon);
+      if(!lat || !lon) return;
+      const name = (el.tags && el.tags.name) || kind.replace('_',' ');
+      L.marker([lat,lon]).bindPopup('<b>'+name+'</b><br>'+kind.replace('_',' ')).addTo(nearbyLayer);
+      count++;
+    });
+    alert(count ? count+' nearby places found.' : 'Nearby place nahi mila.');
+  }catch(e){
+    alert('Nearby search ke liye internet connection check karein.');
+  }
+}
+
+function myLocation(){
+  if(!navigator.geolocation){
+    alert('Aapke browser mein location available nahi.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    go('Your Location', pos.coords.latitude, pos.coords.longitude);
+  }, ()=>{
+    alert('Location permission allow karein.');
+  });
+}
+
+document.getElementById('search').addEventListener('keydown', e=>{
+  if(e.key==='Enter') searchPlace();
+});
+</script>
+</body>
+</html>
